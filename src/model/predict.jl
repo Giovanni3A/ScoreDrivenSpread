@@ -1,9 +1,16 @@
+"""
+prediction for the spread series using the fitted model.
+"""
+
 using Distributions, Random
 using LinearAlgebra, SpecialFunctions, StatsBase
 using Optim
 using CSV, DataFrames
 using Plots
 using StatsPlots
+using ProgressBars
+
+include("loglikelihood.jl")
 
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
 fit_df = CSV.read("projeto//ScoreDrivenSpread//data//results//μ_hat.csv", DataFrame; delim=";", decimal=',')
@@ -13,6 +20,10 @@ params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//params.csv", Da
 orig_Y = Array(df[:, 2:5])
 Y = copy(orig_Y)
 n, p = size(Y)
+
+
+# boolean to 1 month ahead prediction
+h1 = false
 
 # load fit params
 m₀ = params_df[1:4, 2]
@@ -98,9 +109,10 @@ for t = 1:n-24
 
 end
 
-J = 3000
+J = 10000
 future_Y = []
-for j = 1:J
+for j in ProgressBar(1:J)
+    Y1 = copy(Y)
     for t = n-24+1:n
 
         m[t, :] = (1 .- ϕ) .* ω + ϕ .* m[t-1, :] + κ_trend .* S[t-1, :]
@@ -112,7 +124,11 @@ for j = 1:J
         μ[t, :] = m[t, :] + γ[t, :, :]'D[t, :]
 
         dist = MvTDist(exp(v) + 2, μ[t, :], round.(inv(inv_Σ), digits=6))
-        Y[t, :] = rand(dist)
+        if h1
+            Y1[t, :] = rand(dist)
+        else
+            Y[t, :] = rand(dist)
+        end
 
         S[t, :] = (
             (v + p) *
@@ -125,7 +141,11 @@ for j = 1:J
             )
         )
     end
-    append!(future_Y, [copy(Y)])
+    if h1
+        append!(future_Y, [copy(Y1)])
+    else
+        append!(future_Y, [copy(Y1)])
+    end
 end
 
 plot_range = n-120:n
@@ -138,5 +158,9 @@ for i = 1:p
         append!(u, quantile([future_Y[j][t, i] for j = 1:J], 0.95))
     end
     plot!(df[n-24:n, 1], (l .+ u) ./ 2, ribbon=(l .- u) ./ 2, fillalpha=0.35, c=1, label="95% Confidence band")
-    savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_$i.png")
+    if h1
+        savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_1ahead_$i.png")
+    else
+        savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_$i.png")
+    end
 end
