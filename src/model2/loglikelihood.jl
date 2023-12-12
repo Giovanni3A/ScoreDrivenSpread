@@ -18,6 +18,8 @@ end
 using Random
 using LinearAlgebra
 (Q₁, Q₂, Q₃, Q₄, Q₅, Q₆) = round.(rand(6), digits=2)
+ψ[t, :] = ones(p)
+μ[t, :] = ones(p)
 
 """
 -Log-likelihood calculation
@@ -102,7 +104,6 @@ function loglikelihood(θ, reconstruct=false)
     γ₀₄ = [γ₀₄; -sum(γ₀₄)]
     v = exp(v) + 2
     η = sigmoid.(η)
-    σ₀ = exp.(ψ₀)
 
     # initialize variables
     L = 0
@@ -110,6 +111,10 @@ function loglikelihood(θ, reconstruct=false)
     γ = zeros(n, 12, p)
     μ = Matrix{Float64}(undef, n, p)
     S = Matrix{Float64}(undef, n, p)
+    ψ = Matrix{Float64}(undef, n, p)
+    V = zeros(n, p, p)
+    Σ = zeros(n, p, p)
+    S2 = Matrix{Float64}(undef, n, p)
 
     # loop over time
     for t = 1:n
@@ -138,24 +143,54 @@ function loglikelihood(θ, reconstruct=false)
         # μₜ
         μ[t, :] = m[t, :] + γ[t, :, :]'D[t, :]
 
-        # Sₜ (score)
+        # variance component
+        if t == 1
+            ψ[t, :] = (1 .- η) .* ρ .+ η .* ψ₀
+        else
+            ψ[t, :] = (1 .- η) .* ρ .+ η .* ψ[t-1, :] + κ_var .* S2[t-1, :]
+        end
+        V_t = diagm(exp.(ψ[t, :]))
+        Σ[t, :, :] = V_t * R * V_t
+        det_Σ = (det(V_t)^2) * prod(diag(Q) .^ (-1))
+        inv_Σ = inv(Σ[t, :, :])
+
+        # Sₜ (μ)
         S[t, :] = (
             (v + p) *
-            inv(v) *
+            inv(v - 2) *
             (inv_Σ * (Y[t, :] - μ[t, :])) *
             inv(
                 1 +
-                inv(v) *
+                inv(v - 2) *
                 (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
             )
         )
+        # Sₜ (Σ)
+        for i = 1:p
+            dV_dϕ = zeros(p, p)
+            dV_dϕ[i, i] = 1
+            dΣ_dϕ = dV_dϕ * R * V_t + V_t * R * dV_dϕ
+            S2[t, i] = (
+                (-0.5) *
+                sum(diag(inv_Σ * dΣ_dϕ))
+            ) + (
+                (v + p) *
+                inv(2 * (v - 2)) *
+                ((Y[t, :] - μ[t, :])'inv_Σ * dΣ_dϕ * inv_Σ * (Y[t, :] - μ[t, :])) *
+                inv(
+                    1 +
+                    inv(v - 2) *
+                    (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
+                )
+            )
+        end
 
         # log likelihood
-        pre_logL = log(gamma((v + p) / 2)) - log(gamma(v / 2)) - 0.5 * p * log(v * π) + log(prod(diag(chol_inv_Σ)))
-        L += pre_logL - (v + p) * 0.5 * log(1 + inv(v) * (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :]))
+        pre_logL = log(gamma((v + p) / 2)) - log(gamma(v / 2)) - 0.5 * p * log((v - 2) * π) - log(det_Σ)
+        L += pre_logL - (v + p) * 0.5 * log(1 + inv(v - 2) * (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :]))
     end
     if reconstruct
-        return μ, m, γ
+        return μ, m, γ, Σ
     end
     return -L
 end
