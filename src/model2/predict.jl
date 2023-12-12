@@ -13,14 +13,13 @@ using ProgressBars
 include("loglikelihood.jl")
 
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
-fit_df = CSV.read("projeto//ScoreDrivenSpread//data//results//μ_hat.csv", DataFrame; delim=";", decimal=',')
-params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//params.csv", DataFrame; delim=";", decimal=',')
+fit_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model2//μ_hat.csv", DataFrame; delim=";", decimal=',')
+params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model2//params.csv", DataFrame; delim=";", decimal=',')
 
 # get full size
 orig_Y = Array(df[:, 2:5])
 Y = copy(orig_Y)
 n, p = size(Y)
-
 
 # boolean to 1 month ahead prediction
 h1 = false
@@ -29,11 +28,15 @@ h1 = false
 m₀ = params_df[1:4, 2]
 ω = params_df[5:8, 2]
 ϕ = params_df[9:12, 2]
-κ_trend = params_df[13:16, 2]
-κ_sazon = params_df[17:20, 2]
-Σ = params_df[21:30, 2]
-v = params_df[31, 2]
-γ = reshape(params_df[32:end, 2], 11, 4)
+ψ₀ = params_df[13:16, 2]
+ρ = params_df[17:20, 2]
+η = params_df[21:24, 2]
+κ_trend = params_df[25:28, 2]
+κ_sazon = params_df[29:32, 2]
+κ_var = params_df[33:36, 2]
+Q = params_df[37:42, 2]
+v = params_df[43, 2]
+γ = reshape(params_df[44:end, 2], 11, 4)
 γ₀₁ = γ[:, 1]
 γ₀₂ = γ[:, 2]
 γ₀₃ = γ[:, 3]
@@ -49,17 +52,22 @@ end
 # apply transformations
 ϕ = sigmoid.(ϕ)
 m₀ = sigmoid.(m₀)
+η = sigmoid.(η)
 γ₀₁ = [γ₀₁; -sum(γ₀₁)]
 γ₀₂ = [γ₀₂; -sum(γ₀₂)]
 γ₀₃ = [γ₀₃; -sum(γ₀₃)]
 γ₀₄ = [γ₀₄; -sum(γ₀₄)]
-chol_inv_Σ = [
-    Σ[1] Σ[2] Σ[3] Σ[4];
-    0.0 Σ[5] Σ[6] Σ[7];
-    0.0 0.0 Σ[8] Σ[9];
-    0.0 0.0 0.0 Σ[10]
+chol_Q = [
+    1.0 Q[1] Q[2] Q[3];
+    0.0 1.0 Q[4] Q[5];
+    0.0 0.0 1.0 Q[6];
+    0.0 0.0 0.0 1.0
 ]
-inv_Σ = chol_inv_Σ * chol_inv_Σ'
+inv_chol_Q = inv(chol_Q)
+inv_Q = inv_chol_Q' * inv_chol_Q
+Q = chol_Q * chol_Q'
+d_m05 = Diagonal(diag(Q) .^ (-0.5))
+R = d_m05 * Q * d_m05
 v = exp(v) + 2
 
 # initialize variables
@@ -67,6 +75,10 @@ m = Matrix{Float64}(undef, n, p)
 γ = zeros(n, 12, p)
 μ = Matrix{Float64}(undef, n, p)
 S = Matrix{Float64}(undef, n, p)
+ψ = Matrix{Float64}(undef, n, p)
+V = zeros(n, p, p)
+Σ = zeros(n, p, p)
+S2 = Matrix{Float64}(undef, n, p)
 
 # loop over (train) time
 for t = 1:n-24
@@ -95,17 +107,47 @@ for t = 1:n-24
     # μₜ
     μ[t, :] = m[t, :] + γ[t, :, :]'D[t, :]
 
-    # Sₜ (score)
+    # variance component
+    if t == 1
+        ψ[t, :] = (1 .- η) .* ρ .+ η .* ψ₀
+    else
+        ψ[t, :] = (1 .- η) .* ρ .+ η .* ψ[t-1, :] + κ_var .* S2[t-1, :]
+    end
+    V_t = diagm(exp.(ψ[t, :]))
+    Σ[t, :, :] = V_t * R * V_t
+    det_Σ = (det(V_t)^2) * prod(diag(Q) .^ (-1))
+    inv_Σ = inv(Σ[t, :, :])
+
+    # Sₜ (μ)
     S[t, :] = (
         (v + p) *
-        inv(v) *
+        inv(v - 2) *
         (inv_Σ * (Y[t, :] - μ[t, :])) *
         inv(
             1 +
-            inv(v) *
+            inv(v - 2) *
             (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
         )
     )
+    # Sₜ (Σ)
+    for i = 1:p
+        dV_dϕ = zeros(p, p)
+        dV_dϕ[i, i] = 1
+        dΣ_dϕ = dV_dϕ * R * V_t + V_t * R * dV_dϕ
+        S2[t, i] = (
+            (-0.5) *
+            sum(diag(inv_Σ * dΣ_dϕ))
+        ) + (
+            (v + p) *
+            inv(2 * (v - 2)) *
+            ((Y[t, :] - μ[t, :])'inv_Σ * dΣ_dϕ * inv_Σ * (Y[t, :] - μ[t, :])) *
+            inv(
+                1 +
+                inv(v - 2) *
+                (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
+            )
+        )
+    end
 
 end
 
@@ -122,24 +164,50 @@ for j in ProgressBar(1:J)
         γ[t, :, 3] = γ[t-1, :, 3] + aₜ * κ_sazon[3] * S[t-1, 3]
         γ[t, :, 4] = γ[t-1, :, 4] + aₜ * κ_sazon[4] * S[t-1, 4]
         μ[t, :] = m[t, :] + γ[t, :, :]'D[t, :]
+        ψ[t, :] = (1 .- η) .* ρ .+ η .* ψ[t-1, :] + κ_var .* S2[t-1, :]
+        V_t = diagm(exp.(ψ[t, :]))
+        Σ[t, :, :] = V_t * R * V_t
+        det_Σ = (det(V_t)^2) * prod(diag(Q) .^ (-1))
+        inv_Σ = inv(Σ[t, :, :])
 
-        dist = MvTDist(exp(v) + 2, μ[t, :], round.(inv(inv_Σ), digits=6))
+        dist = MvTDist(exp(v) + 2, μ[t, :], ((v - 2) / v) * round.(Σ[t, :, :], digits=6))
         if h1
             Y1[t, :] = rand(dist)
         else
             Y[t, :] = rand(dist)
         end
 
+
+        # Sₜ (μ)
         S[t, :] = (
             (v + p) *
-            inv(v) *
+            inv(v - 2) *
             (inv_Σ * (Y[t, :] - μ[t, :])) *
             inv(
                 1 +
-                inv(v) *
+                inv(v - 2) *
                 (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
             )
         )
+        # Sₜ (Σ)
+        for i = 1:p
+            dV_dϕ = zeros(p, p)
+            dV_dϕ[i, i] = 1
+            dΣ_dϕ = dV_dϕ * R * V_t + V_t * R * dV_dϕ
+            S2[t, i] = (
+                (-0.5) *
+                sum(diag(inv_Σ * dΣ_dϕ))
+            ) + (
+                (v + p) *
+                inv(2 * (v - 2)) *
+                ((Y[t, :] - μ[t, :])'inv_Σ * dΣ_dϕ * inv_Σ * (Y[t, :] - μ[t, :])) *
+                inv(
+                    1 +
+                    inv(v - 2) *
+                    (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
+                )
+            )
+        end
     end
     if h1
         append!(future_Y, [copy(Y1)])
@@ -159,8 +227,8 @@ for i = 1:p
     end
     plot!(df[n-24:n, 1], (l .+ u) ./ 2, ribbon=(l .- u) ./ 2, fillalpha=0.35, c=1, label="95% Confidence band")
     if h1
-        savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_1ahead_$i.png")
+        savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//forecast_1ahead_$i.png")
     else
-        savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_$i.png")
+        savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//forecast_$i.png")
     end
 end

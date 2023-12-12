@@ -34,51 +34,25 @@ initial = [
     Y[1, 1], Y[1, 2], Y[1, 3], Y[1, 4],
     mean(Y[:, 1]), mean(Y[:, 2]), mean(Y[:, 3]), mean(Y[:, 4]),
     zeros(p)...,
+    ones(3 * p)...,
     1e-3 * ones(p)...,
-    0 * ones(p)...,
-    rand(10)...,
-    0
+    0 * ones(2 * p)...,
+    rand(6)...,
+    0,
+    zeros(4 * 11)...
 ]
 # initial values (from previous estimation)
 initial_params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model2//params.csv", DataFrame; delim=";", decimal=',')
-(
-    m₀₁, m₀₂, m₀₃, m₀₄,
-    ω₁, ω₂, ω₃, ω₄,
-    ϕ₁, ϕ₂, ϕ₃, ϕ₄,
-    ψ₁, ψ₂, ψ₃, ψ₄,
-    ρ₁, ρ₂, ρ₃, ρ₄,
-    η₁, η₂, η₃, η₄,
-    κ₁, κ₂, κ₃, κ₄, κ₅, κ₆, κ₇, κ₈, κ₉, κ₁₀, κ₁₁, κ₁₂,
-    Q₁, Q₂, Q₃, Q₄, Q₅, Q₆,
-    v,
-    γ₁₁, γ₁₂, γ₁₃, γ₁₄, γ₁₅, γ₁₆, γ₁₇, γ₁₈, γ₁₉, γ₁₁₀, γ₁₁₁,
-    γ₂₁, γ₂₂, γ₂₃, γ₂₄, γ₂₅, γ₂₆, γ₂₇, γ₂₈, γ₂₉, γ₂₁₀, γ₂₁₁,
-    γ₃₁, γ₃₂, γ₃₃, γ₃₄, γ₃₅, γ₃₆, γ₃₇, γ₃₈, γ₃₉, γ₃₁₀, γ₃₁₁,
-    γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁
-) = initial_params_df[:, :value]
-initial = [
-    m₀₁, m₀₂, m₀₃, m₀₄,
-    ω₁, ω₂, ω₃, ω₄,
-    ϕ₁, ϕ₂, ϕ₃, ϕ₄,
-    ψ₁, ψ₂, ψ₃, ψ₄,
-    ρ₁, ρ₂, ρ₃, ρ₄,
-    η₁, η₂, η₃, η₄,
-    κ₁, κ₂, κ₃, κ₄, κ₅, κ₆, κ₇, κ₈,
-    κ₉, κ₁₀, κ₁₁, κ₁₂,
-    Q₁, Q₂, Q₃, Q₄, Q₅, Q₆,
-    v,
-    γ₁₁, γ₁₂, γ₁₃, γ₁₄, γ₁₅, γ₁₆, γ₁₇, γ₁₈, γ₁₉, γ₁₁₀, γ₁₁₁,
-    γ₂₁, γ₂₂, γ₂₃, γ₂₄, γ₂₅, γ₂₆, γ₂₇, γ₂₈, γ₂₉, γ₂₁₀, γ₂₁₁,
-    γ₃₁, γ₃₂, γ₃₃, γ₃₄, γ₃₅, γ₃₆, γ₃₇, γ₃₈, γ₃₉, γ₃₁₀, γ₃₁₁,
-    γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁
-];
+initial = initial_params_df[:, :value]
 
 # initial fitted series
-μ_initial, m_initial, γ_initial = loglikelihood(initial, true);
-i = 1
-plot(Y[:, i], label="y", color="black")
-plot!(μ_initial[:, i], label="μ")
-plot!(m_initial[:, i], label="m")
+μ_initial, m_initial, γ_initial, Σ_initial = loglikelihood(initial, true);
+i = 2
+plot(X[:, 1], Y[:, i], label="y", color="black")
+plot!(X[:, 1], μ_initial[:, i], label="μ")
+plot!(X[:, 1], m_initial[:, i], label="m")
+plot!(X[:, 1], Σ_initial[:, i, i], label="σ²")
+plot!(X[:, 1], [γ_initial[t, :, i]'D[t, :] for t = 1:n], label="γ")
 
 # call optimizer
 res = optimize(
@@ -89,8 +63,8 @@ res = optimize(
         g_tol=1e-3,
         iterations=10_000,
         show_trace=true,
-        show_every=500,
-        time_limit=60 * 10
+        show_every=200,
+        time_limit=30
     )
 )
 
@@ -113,51 +87,83 @@ solution = Optim.minimizer(res)
 ) = solution
 
 # reconstruct fitted series
-μ_hat, m_hat, γ_hat = loglikelihood(solution, true);
+μ_hat, m_hat, γ_hat, Σ_hat = loglikelihood(solution, true);
 
 # fit analysis
-plot(Y[:, 1], label="y₁", color="black")
-plot!(μ_hat[:, 1], label="μ₁")
-plot!(m_hat[:, 1], label="m₁")
-plot!(μ_hat[:, 1] - m_hat[:, 1], label="γ₁")
-
-plot(Y[:, 2], label="y₂", color="black")
-plot!(μ_hat[:, 2], label="μ₂")
-plot!(m_hat[:, 2], label="m₂")
-plot!(μ_hat[:, 2] - m_hat[:, 2], label="γ₂")
-
-plot(Y[:, 3], label="y₃", color="black")
-plot!(μ_hat[:, 3], label="μ₃")
-plot!(m_hat[:, 3], label="m₃")
-plot!(μ_hat[:, 3] - m_hat[:, 3], label="γ₃")
-
-plot(Y[:, 4], label="y₄", color="black")
-plot!(μ_hat[:, 4], label="μ₄")
-plot!(m_hat[:, 4], label="m₄")
-plot!(μ_hat[:, 4] - m_hat[:, 4], label="γ₄")
+for i = 1:p
+    l = @layout [a; b; c]
+    fig1 = plot(X[:, 1], Y[:, i], label="y", color="black")
+    plot!(X[:, 1], μ_hat[:, i], label="μ")
+    plot!(X[:, 1], m_hat[:, i], label="m")
+    title!("Model fit | i=$i")
+    fig2 = plot(X[:, 1], μ_hat[:, i] - m_hat[:, i], label="γ", color=Plots.palette(:davos10)[1])
+    fig3 = plot(X[:, 1], Σ_hat[:, i, i], label="σ²", color=Plots.palette(:davos10)[1])
+    fig = plot(fig1, fig2, fig3, layout=l)
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//fit$i.png")
+end
 
 # parameter analysis
 println("κ values:")
-κ₁, κ₂, κ₃, κ₄, κ₅, κ₆, κ₇, κ₈, κ₉, κ₁₀, κ₁₁, κ₁₂
+κ₁, κ₂, κ₃, κ₄
+κ₅, κ₆, κ₇, κ₈
+κ₉, κ₁₀, κ₁₁, κ₁₂
 println("ϕ values:")
 sigmoid.([ϕ₁, ϕ₂, ϕ₃, ϕ₄])
 println("ω values:")
 ω₁, ω₂, ω₃, ω₄
 println("m₀ values:")
 sigmoid.([m₀₁, m₀₂, m₀₃, m₀₄])
+println("η values:")
+sigmoid.([η₁, η₂, η₃, η₄])
+println("ψ values:")
+ψ₁, ψ₂, ψ₃, ψ₄
+println("ρ values:")
+ρ₁, ρ₂, ρ₃, ρ₄
 println("v value")
 exp(v) + 2
+println("correlation values")
+chol_Q = [
+    1.0 Q₁ Q₂ Q₃;
+    0.0 1.0 Q₄ Q₅;
+    0.0 0.0 1.0 Q₆;
+    0.0 0.0 0.0 1.0
+];
+Q = chol_Q * chol_Q';
+d_m05 = Diagonal(diag(Q) .^ (-0.5));
+R = d_m05 * Q * d_m05
 
 # residual analysis
 residuals = Y - μ_hat
-plot(residuals[:, 1], label="y₁")
-plot!(residuals[:, 2], label="y₂")
-plot!(residuals[:, 3], label="y₃")
-plot!(residuals[:, 4], label="y₄")
-bar(autocor(residuals[:, 1], 1:15), label="y₁", alpha=0.5)
-bar!(autocor(residuals[:, 2], 1:15), label="y₂", alpha=0.5)
-bar!(autocor(residuals[:, 3], 1:15), label="y₃", alpha=0.5)
-bar!(autocor(residuals[:, 4], 1:15), label="y₄", alpha=0.5)
+for i = 1:p
+    l = @layout [a; b]
+    fig1 = plot(residuals[:, i], label="ϵ")
+    title!("Residual series and autocorrelation")
+    fig2 = bar(autocor(residuals[:, i], 1:15), label="", alpha=0.5)
+    fig = plot(fig1, fig2, layout=l)
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//residuals$i.png")
+end
+
+# quantile residuals
+for i = 1:p
+    l = @layout [a; b; c]
+    qres = Vector{Float64}(undef, n)
+    for t = 1:n
+        marg_dist = Distributions.LocationScale(
+            μ_hat[t, i],
+            Σ_hat[t, i, i],
+            TDist(exp(v) + 2)
+        )
+        qres[t] = quantile(
+            Normal(0, 1),
+            cdf(marg_dist, Y[t, i])
+        )
+    end
+    fig1 = plot(qres, label="", title="Quantile Residuals | i=$i")
+    fig2 = histogram(qres, label="μ=$(round(mean(qres), digits=2)) | σ=$(round(std(qres), digits=2))")
+    fig3 = qqplot(qres, Normal(0, 1))
+    fig = plot(fig1, fig2, fig3, layout=l)
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//quantile_residuals_$i.png")
+end
 
 # create dataframe with parameters (from function)
 parameters_names = [
@@ -242,4 +248,3 @@ transf_params_df = DataFrame(
 CSV.write("projeto//ScoreDrivenSpread//data//results//model2//params.csv", params_df; delim=";", decimal=',')
 CSV.write("projeto//ScoreDrivenSpread//data//results//model2//total_params.csv", transf_params_df; delim=";", decimal=',')
 CSV.write("projeto//ScoreDrivenSpread//data//results//model2//μ_hat.csv", μ_hat_df; delim=";", decimal=',')
-

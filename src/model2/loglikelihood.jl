@@ -2,6 +2,13 @@
 n = 307
 p = 4
 
+# mount seasonality dummies matrix
+D = zeros(n, 12)
+for t = 1:n
+    s_t = t % 12 + 1
+    D[t, s_t] = 1
+end
+
 # inverse tanh
 function invtanh(x)
     return 0.5 * log((1 + x) / (1 - x))
@@ -14,12 +21,6 @@ end
 function logit(x)
     return log(x / (1 - x))
 end
-
-using Random
-using LinearAlgebra
-(Q₁, Q₂, Q₃, Q₄, Q₅, Q₆) = round.(rand(6), digits=2)
-ψ[t, :] = ones(p)
-μ[t, :] = ones(p)
 
 """
 -Log-likelihood calculation
@@ -87,13 +88,6 @@ function loglikelihood(θ, reconstruct=false)
 
     # det(Σ) = det(V)² . det(R)
     # det(R) = prod(diag(Q))^-1
-
-    # mount seasonality dummies matrix
-    D = zeros(n, 12)
-    for t = 1:n
-        s_t = t % 12 + 1
-        D[t, s_t] = 1
-    end
 
     # apply transformations
     ϕ = sigmoid.(ϕ)
