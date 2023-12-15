@@ -1,7 +1,3 @@
-# declare series size 
-n = 307
-p = 4
-
 # mount seasonality dummies matrix
 D = zeros(n, 12)
 for t = 1:n
