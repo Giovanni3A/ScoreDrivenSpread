@@ -11,7 +11,7 @@ using StatsPlots
 
 # read data from monthly_data.csv file
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
-X = df[1:end-24, :]  # filter last 24 months
+X = df[1:end, :]  # filter last 24 months
 y1 = X[:, 2]
 y2 = X[:, 3]
 y3 = X[:, 4]
@@ -37,7 +37,8 @@ initial = [
     1e-3 * ones(p)...,
     0 * ones(p)...,
     rand(10)...,
-    0
+    0,
+    zeros(44)...
 ]
 # initial values (from previous estimation)
 initial_params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model1//params.csv", DataFrame; delim=";", decimal=',')
@@ -45,7 +46,7 @@ initial = initial_params_df[:, :value]
 
 # initial fitted series
 μ_initial, m_initial, γ_initial = loglikelihood(initial, true);
-i = 2
+i = 1
 plot(X[:, 1], Y[:, i], label="y", color="black")
 plot!(X[:, 1], μ_initial[:, i], label="μ")
 plot!(X[:, 1], m_initial[:, i], label="m")
@@ -58,10 +59,10 @@ res = optimize(
     NelderMead(),
     Optim.Options(
         g_tol=1e-3,
-        iterations=10_000,
+        iterations=30_000,
         show_trace=true,
-        show_every=500,
-        time_limit=60 * 10
+        show_every=200,
+        time_limit=60*5
     )
 )
 
@@ -79,6 +80,7 @@ solution = Optim.minimizer(res)
     γ₃₁, γ₃₂, γ₃₃, γ₃₄, γ₃₅, γ₃₆, γ₃₇, γ₃₈, γ₃₉, γ₃₁₀, γ₃₁₁,
     γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁
 ) = solution
+μ_hat, m_hat, γ_hat = loglikelihood(solution, true)
 
 # fit analysis
 for i = 1:p
@@ -125,7 +127,7 @@ for i = 1:p
 end
 
 # quantile residual using monte carlo integration
-J = 30000
+J = 300
 Z = Vector{Float64}(undef, n)
 for t = 1:n
     dist = MvTDist(exp(v) + 2, μ_hat[t, :], round.(cov_Y, digits=6))
@@ -140,7 +142,7 @@ l = @layout [a; b]
 fig1 = histogram(Z, title="Histogram of quantile residuals", alpha=0.7, label="μ=$(round(mean(Z), digits=2)) | σ=$(round(std(Z), digits=2))")
 fig2 = qqplot(Z, Normal(0, 1), title="QQ-plot of quantile residuals")
 fig = plot(fig1, fig2, layout=l)
-savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//monte_carlo_quantile_residuals.png")
+savefig(fig, "projeto//ScoreDrivenSpread//data//results//model1//monte_carlo_quantile_residuals.png")
 
 # quantile residuals using marginal distribution
 for i = 1:p
@@ -232,7 +234,6 @@ transf_params_df = DataFrame(
 )
 
 # save as csv
-CSV.write("projeto//ScoreDrivenSpread//data//results//params.csv", params_df; delim=";", decimal=',')
-CSV.write("projeto//ScoreDrivenSpread//data//results//total_params.csv", transf_params_df; delim=";", decimal=',')
-CSV.write("projeto//ScoreDrivenSpread//data//results//μ_hat.csv", μ_hat_df; delim=";", decimal=',')
-
+CSV.write("projeto//ScoreDrivenSpread//data//results//model1//params.csv", params_df; delim=";", decimal=',')
+CSV.write("projeto//ScoreDrivenSpread//data//results//model1//total_params.csv", transf_params_df; delim=";", decimal=',')
+CSV.write("projeto//ScoreDrivenSpread//data//results//model1//μ_hat.csv", μ_hat_df; delim=";", decimal=',')

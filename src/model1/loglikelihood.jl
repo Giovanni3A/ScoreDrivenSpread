@@ -115,18 +115,18 @@ function loglikelihood(θ, reconstruct=false)
         # Sₜ (score)
         S[t, :] = (
             (v + p) *
-            inv(v) *
+            inv(v-2) *
             (inv_Σ * (Y[t, :] - μ[t, :])) *
             inv(
                 1 +
-                inv(v) *
+                inv(v-2) *
                 (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :])
             )
         )
 
         # log likelihood
-        pre_logL = log(gamma((v + p) / 2)) - log(gamma(v / 2)) - 0.5 * p * log(v * π) + log(prod(diag(chol_inv_Σ)))
-        L += pre_logL - (v + p) * 0.5 * log(1 + inv(v) * (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :]))
+        pre_logL = log(gamma((v + p) / 2)) - log(gamma(v / 2)) - 0.5 * p * log((v-2) * π) + log(prod(diag(chol_inv_Σ)))
+        L += pre_logL - (v + p) * 0.5 * log(1 + inv(v-2) * (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :]))
     end
     if reconstruct
         return μ, m, γ
