@@ -1,6 +1,13 @@
-# declare series size
+# declare series size 
 n = 307
 p = 4
+
+# mount seasonality dummies matrix
+D = zeros(n, 12)
+for t = 1:n
+    s_t = t % 12 + 1
+    D[t, s_t] = 1
+end
 
 # inverse tanh
 function invtanh(x)
@@ -58,13 +65,6 @@ function loglikelihood(θ, reconstruct=false)
     γ₀₂ = [γ₂₁, γ₂₂, γ₂₃, γ₂₄, γ₂₅, γ₂₆, γ₂₇, γ₂₈, γ₂₉, γ₂₁₀, γ₂₁₁]
     γ₀₃ = [γ₃₁, γ₃₂, γ₃₃, γ₃₄, γ₃₅, γ₃₆, γ₃₇, γ₃₈, γ₃₉, γ₃₁₀, γ₃₁₁]
     γ₀₄ = [γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁]
-
-    # mount seasonality dummies matrix
-    D = zeros(n, 12)
-    for t = 1:n
-        s_t = t % 12 + 1
-        D[t, s_t] = 1
-    end
 
     # apply transformations
     ϕ = sigmoid.(ϕ)

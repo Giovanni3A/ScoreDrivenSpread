@@ -64,7 +64,7 @@ res = optimize(
         iterations=10_000,
         show_trace=true,
         show_every=200,
-        time_limit=30
+        time_limit=60*10
     )
 )
 
@@ -143,19 +143,35 @@ for i = 1:p
     savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//residuals$i.png")
 end
 
-# quantile residuals
+# quantile residual using monte carlo integration
+J = 1000
+Z = Vector{Float64}(undef, n)
+for t = 1:n
+    dist = MvTDist(exp(v) + 2, μ_hat[t, :], round.(Σ_hat[t, :, :], digits=6)*(exp(v) / (exp(v)+2)))
+    samp = rand(dist, J)
+    cdf_ = 0
+    for j = 1:J
+        cdf_ += Int(samp[:, j] <= Y[t, :]) / J
+    end
+    Z[t] = quantile(Normal(0, 1), cdf_)
+end
+l = @layout [a; b]
+fig1 = histogram(Z, title="Histogram of quantile residuals", alpha=0.7, label="μ=$(round(mean(Z), digits=2)) | σ=$(round(std(Z), digits=2))")
+fig2 = qqplot(Z, Normal(0, 1), title="QQ-plot of quantile residuals")
+fig = plot(fig1, fig2, layout=l)
+savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//monte_carlo_quantile_residuals.png")
+
+# quantile residuals using marginal distribution
 for i = 1:p
     l = @layout [a; b; c]
     qres = Vector{Float64}(undef, n)
     for t = 1:n
-        marg_dist = Distributions.LocationScale(
-            μ_hat[t, i],
-            Σ_hat[t, i, i],
-            TDist(exp(v) + 2)
-        )
+        σ = (Σ_hat[t, i, i] * exp(v) / (exp(v) + 2)) ^ 0.5
+        norm_Y = (Y[t, i]-μ_hat[t, i]) / σ
+        marg_dist = TDist(exp(v) + 2)
         qres[t] = quantile(
             Normal(0, 1),
-            cdf(marg_dist, Y[t, i])
+            cdf(marg_dist, norm_Y)
         )
     end
     fig1 = plot(qres, label="", title="Quantile Residuals | i=$i")

@@ -40,15 +40,16 @@ initial = [
     0
 ]
 # initial values (from previous estimation)
-initial_params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//params.csv", DataFrame; delim=";", decimal=',')
+initial_params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model1//params.csv", DataFrame; delim=";", decimal=',')
 initial = initial_params_df[:, :value]
 
 # initial fitted series
 μ_initial, m_initial, γ_initial = loglikelihood(initial, true);
 i = 2
-plot(Y[:, i], label="y", color="black")
-plot!(μ_initial[:, i], label="μ")
-plot!(m_initial[:, i], label="m")
+plot(X[:, 1], Y[:, i], label="y", color="black")
+plot!(X[:, 1], μ_initial[:, i], label="μ")
+plot!(X[:, 1], m_initial[:, i], label="m")
+plot!(X[:, 1], [γ_initial[t, :, i]'D[t, :] for t = 1:n], label="γ")
 
 # call optimizer
 res = optimize(
@@ -79,29 +80,17 @@ solution = Optim.minimizer(res)
     γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁
 ) = solution
 
-# reconstruct fitted series
-μ_hat, m_hat, γ_hat = loglikelihood(solution, true);
-
 # fit analysis
-plot(Y[:, 1], label="y₁", color="black")
-plot!(μ_hat[:, 1], label="μ₁")
-plot!(m_hat[:, 1], label="m₁")
-plot!(μ_hat[:, 1] - m_hat[:, 1], label="γ₁")
-
-plot(Y[:, 2], label="y₂", color="black")
-plot!(μ_hat[:, 2], label="μ₂")
-plot!(m_hat[:, 2], label="m₂")
-plot!(μ_hat[:, 2] - m_hat[:, 2], label="γ₂")
-
-plot(Y[:, 3], label="y₃", color="black")
-plot!(μ_hat[:, 3], label="μ₃")
-plot!(m_hat[:, 3], label="m₃")
-plot!(μ_hat[:, 3] - m_hat[:, 3], label="γ₃")
-
-plot(Y[:, 4], label="y₄", color="black")
-plot!(μ_hat[:, 4], label="μ₄")
-plot!(m_hat[:, 4], label="m₄")
-plot!(μ_hat[:, 4] - m_hat[:, 4], label="γ₄")
+for i = 1:p
+    l = @layout [a; b]
+    fig1 = plot(X[:, 1], Y[:, i], label="y", color="black")
+    plot!(X[:, 1], μ_hat[:, i], label="μ")
+    plot!(X[:, 1], m_hat[:, i], label="m")
+    title!("Model fit | i=$i")
+    fig2 = plot(X[:, 1], μ_hat[:, i] - m_hat[:, i], label="γ", color=Plots.palette(:davos10)[1])
+    fig = plot(fig1, fig2, layout=l)
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model1//fit$i.png")
+end
 
 # parameter analysis
 println("κ values:")
@@ -126,14 +115,14 @@ exp(v) + 2
 
 # residual analysis
 residuals = Y - μ_hat
-plot(residuals[:, 1], label="y₁")
-plot!(residuals[:, 2], label="y₂")
-plot!(residuals[:, 3], label="y₃")
-plot!(residuals[:, 4], label="y₄")
-bar(autocor(residuals[:, 1], 1:15), label="y₁", alpha=0.5)
-bar!(autocor(residuals[:, 2], 1:15), label="y₂", alpha=0.5)
-bar!(autocor(residuals[:, 3], 1:15), label="y₃", alpha=0.5)
-bar!(autocor(residuals[:, 4], 1:15), label="y₄", alpha=0.5)
+for i = 1:p
+    l = @layout [a; b]
+    fig1 = plot(residuals[:, i], label="ϵ")
+    title!("Residual series and autocorrelation")
+    fig2 = bar(autocor(residuals[:, i], 1:15), label="", alpha=0.5)
+    fig = plot(fig1, fig2, layout=l)
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model1//residuals$i.png")
+end
 
 # quantile residual using monte carlo integration
 J = 30000
@@ -147,10 +136,30 @@ for t = 1:n
     end
     Z[t] = quantile(Normal(0, 1), cdf_)
 end
-fig = histogram(Z, title="Histogram of quantile residuals", alpha=0.7)
-savefig(fig, "projeto//ScoreDrivenSpread//data//results//quantile_residuals_hist.png")
-fig = qqplot(Z, Normal(0, 1), title="QQ-plot of quantile residuals")
-savefig(fig, "projeto//ScoreDrivenSpread//data//results//quantile_residuals_qqplot.png")
+l = @layout [a; b]
+fig1 = histogram(Z, title="Histogram of quantile residuals", alpha=0.7, label="μ=$(round(mean(Z), digits=2)) | σ=$(round(std(Z), digits=2))")
+fig2 = qqplot(Z, Normal(0, 1), title="QQ-plot of quantile residuals")
+fig = plot(fig1, fig2, layout=l)
+savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//monte_carlo_quantile_residuals.png")
+
+# quantile residuals using marginal distribution
+for i = 1:p
+    l = @layout [a; b; c]
+    qres = Vector{Float64}(undef, n)
+    for t = 1:n
+        norm_Y = (Y[t, i]-μ_hat[t, i]) / (cov_Y[i, i]^0.5)
+        marg_dist = TDist(exp(v) + 2)
+        qres[t] = quantile(
+            Normal(0, 1),
+            cdf(marg_dist, norm_Y)
+        )
+    end
+    fig1 = plot(qres, label="", title="Quantile Residuals | i=$i")
+    fig2 = histogram(qres, label="μ=$(round(mean(qres), digits=2)) | σ=$(round(std(qres), digits=2))")
+    fig3 = qqplot(qres, Normal(0, 1))
+    fig = plot(fig1, fig2, fig3, layout=l)
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model1//quantile_residuals_$i.png")
+end
 
 # create dataframe with parameters (from function)
 parameters_names = [

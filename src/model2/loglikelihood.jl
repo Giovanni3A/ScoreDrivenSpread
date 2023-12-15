@@ -162,7 +162,7 @@ function loglikelihood(θ, reconstruct=false)
         # Sₜ (Σ)
         for i = 1:p
             dV_dϕ = zeros(p, p)
-            dV_dϕ[i, i] = 1
+            dV_dϕ[i, i] = exp(ψ[t, i])
             dΣ_dϕ = dV_dϕ * R * V_t + V_t * R * dV_dϕ
             S2[t, i] = (
                 (-0.5) *
