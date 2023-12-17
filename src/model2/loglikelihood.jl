@@ -176,7 +176,7 @@ function loglikelihood(θ, reconstruct=false)
         end
 
         # log likelihood
-        pre_logL = log(gamma((v + p) / 2)) - log(gamma(v / 2)) - 0.5 * p * log((v - 2) * π) - log(det_Σ)
+        pre_logL = log(gamma((v + p) / 2)) - log(gamma(v / 2)) - 0.5 * p * log((v - 2) * π) - 0.5*log(det_Σ)
         L += pre_logL - (v + p) * 0.5 * log(1 + inv(v - 2) * (Y[t, :] - μ[t, :])' * inv_Σ * (Y[t, :] - μ[t, :]))
     end
     if reconstruct

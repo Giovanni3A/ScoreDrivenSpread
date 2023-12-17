@@ -11,7 +11,7 @@ using StatsPlots
 
 # read data from monthly_data.csv file
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
-X = df[1:end-24, :]  # filter last 24 months
+X = df[1:end, :]  # filter last 24 months
 y1 = X[:, 2]
 y2 = X[:, 3]
 y3 = X[:, 4]
@@ -29,25 +29,41 @@ n, p = size(Y)
 # include loglikelihood function
 include("loglikelihood.jl")
 
-# initial values (from theory)
+# initial values (from model 1)
+initial_params_df1 = CSV.read("projeto//ScoreDrivenSpread//data//results//model1//params.csv", DataFrame; delim=";", decimal=',')
+(
+    m₀₁, m₀₂, m₀₃, m₀₄,
+    ω₁, ω₂, ω₃, ω₄,
+    ϕ₁, ϕ₂, ϕ₃, ϕ₄,
+    κ₁, κ₂, κ₃, κ₄, κ₅, κ₆, κ₇, κ₈,
+    Σ₁, Σ₂, Σ₃, Σ₄, Σ₅, Σ₆, Σ₇, Σ₈, Σ₉, Σ₁₀,
+    v,
+    γ₁₁, γ₁₂, γ₁₃, γ₁₄, γ₁₅, γ₁₆, γ₁₇, γ₁₈, γ₁₉, γ₁₁₀, γ₁₁₁,
+    γ₂₁, γ₂₂, γ₂₃, γ₂₄, γ₂₅, γ₂₆, γ₂₇, γ₂₈, γ₂₉, γ₂₁₀, γ₂₁₁,
+    γ₃₁, γ₃₂, γ₃₃, γ₃₄, γ₃₅, γ₃₆, γ₃₇, γ₃₈, γ₃₉, γ₃₁₀, γ₃₁₁,
+    γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁
+) = initial_params_df1[:, :value]
 initial = [
-    Y[1, 1], Y[1, 2], Y[1, 3], Y[1, 4],
-    mean(Y[:, 1]), mean(Y[:, 2]), mean(Y[:, 3]), mean(Y[:, 4]),
-    zeros(p)...,
-    ones(3 * p)...,
-    1e-3 * ones(p)...,
-    0 * ones(2 * p)...,
-    rand(6)...,
-    0,
-    zeros(4 * 11)...
+    m₀₁, m₀₂, m₀₃, m₀₄,
+    ω₁, ω₂, ω₃, ω₄,
+    ϕ₁, ϕ₂, ϕ₃, ϕ₄,
+    zeros(3*p)...,
+    κ₁, κ₂, κ₃, κ₄, κ₅, κ₆, κ₇, κ₈, zeros(p)...,
+    zeros(6)...,
+    v,
+    γ₁₁, γ₁₂, γ₁₃, γ₁₄, γ₁₅, γ₁₆, γ₁₇, γ₁₈, γ₁₉, γ₁₁₀, γ₁₁₁,
+    γ₂₁, γ₂₂, γ₂₃, γ₂₄, γ₂₅, γ₂₆, γ₂₇, γ₂₈, γ₂₉, γ₂₁₀, γ₂₁₁,
+    γ₃₁, γ₃₂, γ₃₃, γ₃₄, γ₃₅, γ₃₆, γ₃₇, γ₃₈, γ₃₉, γ₃₁₀, γ₃₁₁,
+    γ₄₁, γ₄₂, γ₄₃, γ₄₄, γ₄₅, γ₄₆, γ₄₇, γ₄₈, γ₄₉, γ₄₁₀, γ₄₁₁
 ]
+
 # initial values (from previous estimation)
 initial_params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model2//params.csv", DataFrame; delim=";", decimal=',')
 initial = initial_params_df[:, :value]
 
 # initial fitted series
 μ_initial, m_initial, γ_initial, Σ_initial = loglikelihood(initial, true);
-i = 2
+i = 3
 plot(X[:, 1], Y[:, i], label="y", color="black")
 plot!(X[:, 1], μ_initial[:, i], label="μ")
 plot!(X[:, 1], m_initial[:, i], label="m")
@@ -61,10 +77,10 @@ res = optimize(
     NelderMead(),
     Optim.Options(
         g_tol=1e-3,
-        iterations=10_000,
+        iterations=300_000,
         show_trace=true,
-        show_every=200,
-        time_limit=60*10
+        show_every=100,
+        time_limit=60*60*3
     )
 )
 
@@ -127,7 +143,7 @@ chol_Q = [
     0.0 1.0 Q₄ Q₅;
     0.0 0.0 1.0 Q₆;
     0.0 0.0 0.0 1.0
-];
+]
 Q = chol_Q * chol_Q';
 d_m05 = Diagonal(diag(Q) .^ (-0.5));
 R = d_m05 * Q * d_m05
@@ -144,7 +160,7 @@ for i = 1:p
 end
 
 # quantile residual using monte carlo integration
-J = 1000
+J = 3000
 Z = Vector{Float64}(undef, n)
 for t = 1:n
     dist = MvTDist(exp(v) + 2, μ_hat[t, :], round.(Σ_hat[t, :, :], digits=6)*(exp(v) / (exp(v)+2)))
