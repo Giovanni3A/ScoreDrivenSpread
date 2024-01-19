@@ -16,13 +16,14 @@ df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", Dat
 fit_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model2//μ_hat.csv", DataFrame; delim=";", decimal=',')
 params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model2//params.csv", DataFrame; delim=";", decimal=',')
 
+# future prediction window
+w = 10*12
+
 # get full size
 orig_Y = Array(df[:, 2:5])
 Y = copy(orig_Y)
 n, p = size(Y)
-
-# boolean to 1 month ahead prediction
-h1 = false
+Y = cat(Y, zeros(w, 4), dims=1)
 
 # load fit params
 m₀ = params_df[1:4, 2]
@@ -43,8 +44,8 @@ v = params_df[43, 2]
 γ₀₄ = γ[:, 4]
 
 # mount seasonality dummies matrix
-D = zeros(n, 12)
-for t = 1:n
+D = zeros(n+w, 12)
+for t = 1:n+w
     s_t = t % 12 + 1
     D[t, s_t] = 1
 end
@@ -71,17 +72,17 @@ R = d_m05 * Q * d_m05
 v = exp(v) + 2
 
 # initialize variables
-m = Matrix{Float64}(undef, n, p)
-γ = zeros(n, 12, p)
-μ = Matrix{Float64}(undef, n, p)
-S = Matrix{Float64}(undef, n, p)
-ψ = Matrix{Float64}(undef, n, p)
-V = zeros(n, p, p)
-Σ = zeros(n, p, p)
-S2 = Matrix{Float64}(undef, n, p)
+m = Matrix{Float64}(undef, n+w, p)
+γ = zeros(n+w, 12, p)
+μ = Matrix{Float64}(undef, n+w, p)
+S = Matrix{Float64}(undef, n+w, p)
+ψ = Matrix{Float64}(undef, n+w, p)
+V = zeros(n+w, p, p)
+Σ = zeros(n+w, p, p)
+S2 = Matrix{Float64}(undef, n+w, p)
 
-# loop over (train) time
-for t = 1:n-48
+# loop over time
+for t = 1:n
 
     # trend component
     if t == 1
@@ -151,11 +152,10 @@ for t = 1:n-48
 
 end
 
-J = 30000
+J = 3000
 future_Y = []
 for j in ProgressBar(1:J)
-    Y1 = copy(Y)
-    for t = n-48+1:n
+    for t = n+1:n+w
 
         m[t, :] = (1 .- ϕ) .* ω + ϕ .* m[t-1, :] + κ_trend .* S[t-1, :]
         aₜ = (-1 / 11) * (ones(12) - 12 * D[t, :])
@@ -171,11 +171,7 @@ for j in ProgressBar(1:J)
         inv_Σ = inv(Σ[t, :, :])
 
         dist = MvTDist(exp(v) + 2, μ[t, :], ((v - 2) / v) * round.(Σ[t, :, :], digits=6))
-        if h1
-            Y1[t, :] = rand(dist)
-        else
-            Y[t, :] = rand(dist)
-        end
+        Y[t, :] = rand(dist)
 
 
         # Sₜ (μ)
@@ -209,48 +205,19 @@ for j in ProgressBar(1:J)
             )
         end
     end
-    if h1
-        append!(future_Y, [copy(Y1)])
-    else
-        append!(future_Y, [copy(Y1)])
-    end
+    append!(future_Y, [copy(Y)])
 end
 
-plot_range = n-200:n
+using Dates
+future_rng = [df[end, 1] + Month(i) for i=1:w]
 for i = 1:p
-    fig = plot(df[plot_range, 1], orig_Y[plot_range, i], color="black", label="Spread Series")
+    fig = plot(df[n-120:end, 1], orig_Y[n-120:end, i], color="black", label="Spread Series")
     l = []
     u = []
-    for t = n-48:n
+    for t = n+1:n+w
         append!(l, quantile([future_Y[j][t, i] for j = 1:J], 0.05))
         append!(u, quantile([future_Y[j][t, i] for j = 1:J], 0.95))
     end
-    plot!(df[n-48:n, 1], (l .+ u) ./ 2, ribbon=(l .- u) ./ 2, fillalpha=0.35, c=1, label="95% Confidence band")
-    if h1
-        savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//forecast_1ahead_$i.png")
-    else
-        savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//forecast_$i.png")
-    end
+    plot!(future_rng, (l .+ u) ./ 2, ribbon=(l .- u) ./ 2, fillalpha=0.35, c=1, label="95% Confidence band")
+    savefig(fig, "projeto//ScoreDrivenSpread//data//results//model2//long_forecast_$i.png")
 end
-
-
-# create dataframe with lower and upper bounds
-predict_df = DataFrame()
-predict_df[!, Symbol("date")] = df[n-48:n, 1]
-for i=1:p
-    l = []
-    u = []
-    a = []
-    for t = n-48:n
-        append!(l, quantile([future_Y[j][t, i] for j = 1:J], 0.05))
-        append!(u, quantile([future_Y[j][t, i] for j = 1:J], 0.95))
-        append!(a, mean([future_Y[j][t, i] for j = 1:J]))
-    end
-    predict_df[!, Symbol("l$i")] = l
-    predict_df[!, Symbol("y$i")] = a
-    predict_df[!, Symbol("u$i")] = u
-end
-
-predict_df
-
-CSV.write("projeto//ScoreDrivenSpread//data//results//model2//forecast.csv", predict_df; delim=";", decimal=',')

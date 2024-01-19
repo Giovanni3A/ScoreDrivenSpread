@@ -13,8 +13,8 @@ using ProgressBars
 include("loglikelihood.jl")
 
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
-fit_df = CSV.read("projeto//ScoreDrivenSpread//data//results//μ_hat.csv", DataFrame; delim=";", decimal=',')
-params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//params.csv", DataFrame; delim=";", decimal=',')
+fit_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model1//μ_hat.csv", DataFrame; delim=";", decimal=',')
+params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model1//params.csv", DataFrame; delim=";", decimal=',')
 
 # get full size
 orig_Y = Array(df[:, 2:5])
@@ -69,7 +69,7 @@ m = Matrix{Float64}(undef, n, p)
 S = Matrix{Float64}(undef, n, p)
 
 # loop over (train) time
-for t = 1:n-24
+for t = 1:n-48
 
     # trend component
     if t == 1
@@ -109,11 +109,11 @@ for t = 1:n-24
 
 end
 
-J = 10000
+J = 30000
 future_Y = []
 for j in ProgressBar(1:J)
     Y1 = copy(Y)
-    for t = n-24+1:n
+    for t = n-48+1:n
 
         m[t, :] = (1 .- ϕ) .* ω + ϕ .* m[t-1, :] + κ_trend .* S[t-1, :]
         aₜ = (-1 / 11) * (ones(12) - 12 * D[t, :])
@@ -148,19 +148,41 @@ for j in ProgressBar(1:J)
     end
 end
 
-plot_range = n-120:n
+plot_range = n-200:n
 for i = 1:p
+    println(i)
     fig = plot(df[plot_range, 1], orig_Y[plot_range, i], color="black", label="Spread Series")
     l = []
     u = []
-    for t = n-24:n
+    for t = n-48:n
         append!(l, quantile([future_Y[j][t, i] for j = 1:J], 0.05))
         append!(u, quantile([future_Y[j][t, i] for j = 1:J], 0.95))
     end
-    plot!(df[n-24:n, 1], (l .+ u) ./ 2, ribbon=(l .- u) ./ 2, fillalpha=0.35, c=1, label="95% Confidence band")
+    plot!(df[n-48:n, 1], (l .+ u) ./ 2, ribbon=(l .- u) ./ 2, fillalpha=0.35, c=1, label="95% Confidence band")
     if h1
-        savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_1ahead_$i.png")
+        savefig(fig, "projeto//ScoreDrivenSpread//data//results//model1//forecast_1ahead_$i.png")
     else
-        savefig(fig, "projeto//ScoreDrivenSpread//data//results//forecast_$i.png")
+        savefig(fig, "projeto//ScoreDrivenSpread//data//results//model1//forecast_$i.png")
     end
 end
+
+# create dataframe with lower and upper bounds
+predict_df = DataFrame()
+predict_df[!, Symbol("date")] = df[n-48:n, 1]
+for i=1:p
+    l = []
+    u = []
+    a = []
+    for t = n-48:n
+        append!(l, quantile([future_Y[j][t, i] for j = 1:J], 0.05))
+        append!(u, quantile([future_Y[j][t, i] for j = 1:J], 0.95))
+        append!(a, mean([future_Y[j][t, i] for j = 1:J]))
+    end
+    predict_df[!, Symbol("l$i")] = l
+    predict_df[!, Symbol("y$i")] = a
+    predict_df[!, Symbol("u$i")] = u
+end
+
+predict_df
+
+CSV.write("projeto//ScoreDrivenSpread//data//results//model1//forecast.csv", predict_df; delim=";", decimal=',')

@@ -11,7 +11,7 @@ using StatsPlots
 
 # read data from monthly_data.csv file
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
-X = df[1:end, :]  # filter last 24 months
+X = df[1:end-48, :]  # filter last 24 months
 y1 = X[:, 2]
 y2 = X[:, 3]
 y3 = X[:, 4]
@@ -43,6 +43,9 @@ initial = [
 # initial values (from previous estimation)
 initial_params_df = CSV.read("projeto//ScoreDrivenSpread//data//results//model1//params.csv", DataFrame; delim=";", decimal=',')
 initial = initial_params_df[:, :value]
+
+initial[17:20] .= 0
+initial[end-43:end] .= 0
 
 # initial fitted series
 μ_initial, m_initial, γ_initial = loglikelihood(initial, true);

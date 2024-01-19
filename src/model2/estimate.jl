@@ -11,7 +11,7 @@ using StatsPlots
 
 # read data from monthly_data.csv file
 df = CSV.read("projeto//ScoreDrivenSpread//data//trusted//monthly_data.csv", DataFrame)
-X = df[1:end, :]  # filter last 24 months
+X = df[1:end-48, :]  # filter last 24 months
 y1 = X[:, 2]
 y2 = X[:, 3]
 y3 = X[:, 4]
@@ -249,7 +249,7 @@ transf_params_df = DataFrame(
         sigmoid.([m₀₁, m₀₂, m₀₃, m₀₄])...,
         ω₁, ω₂, ω₃, ω₄,
         sigmoid.([ϕ₁, ϕ₂, ϕ₃, ϕ₄])...,
-        ψ₁, ψ₂, ψ₃, ψ₄,
+        exp.([ψ₁, ψ₂, ψ₃, ψ₄])...,
         ρ₁, ρ₂, ρ₃, ρ₄,
         sigmoid.([η₁, η₂, η₃, η₄])...,
         κ₁, κ₂, κ₃, κ₄, κ₅, κ₆, κ₇, κ₈, κ₉, κ₁₀, κ₁₁, κ₁₂,
